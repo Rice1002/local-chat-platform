@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<title>本地对话平台</title>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif;
+    background: #0f1117; color: #e6e6e6; height: 100vh; display: flex; overflow: hidden;
+  }
+  #sidebar {
+    width: 260px; background: #12151d; border-right: 1px solid #262a36;
+    display: flex; flex-direction: column;
+  }
+  #newConvBtn {
+    margin: 12px; padding: 10px; background: #4a7dff; color: #fff;
+    border: none; border-radius: 8px; font-size: 14px; cursor: pointer;
+  }
+  #newConvBtn:hover { background: #3a6ae6; }
+  #convList { flex: 1; overflow-y: auto; padding: 0 8px 8px; }
+  .conv-item {
+    padding: 10px 12px; border-radius: 8px; cursor: pointer;
+    margin-bottom: 4px; display: flex; justify-content: space-between;
+    align-items: center; gap: 8px; font-size: 13px; transition: .15s;
+  }
+  .conv-item:hover { background: #1e2230; }
+  .conv-item.active { background: #2b4a8a; }
+  .conv-item .title { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .conv-item .del {
+    opacity: 0; color: #8b93a7; cursor: pointer; font-size: 16px;
+    padding: 2px 6px; border-radius: 4px; line-height: 1;
+  }
+  .conv-item:hover .del { opacity: 1; }
+  .conv-item .del:hover { color: #ff5c5c; background: #2e3444; }
+  #clearAllBtn {
+    margin: 8px 12px 12px; padding: 10px; background: #2e3444; color: #c9d1e0;
+    border: none; border-radius: 8px; font-size: 13px; cursor: pointer; transition: .15s;
+  }
+  #clearAllBtn:hover { background: #7a2c2c; color: #fff; }
+
+  #main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  #topbar {
+    padding: 12px 20px; border-bottom: 1px solid #262a36;
+    display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  }
+  #modelSelect {
+    background: #1e2230; color: #e6e6e6; border: 1px solid #2e3444;
+    border-radius: 8px; padding: 8px 12px; font-size: 14px; outline: none;
+  }
+  button.preset {
+    background: #1e2230; border: 1px solid #2e3444; color: #c9d1e0;
+    padding: 7px 14px; font-size: 13px; border-radius: 8px; cursor: pointer;
+    transition: .15s;
+  }
+  button.preset:hover { background: #2e3444; }
+  button.preset.active { background: #4a7dff; border-color: #4a7dff; color: #fff; }
+
+  #skillsBar {
+    display: flex; gap: 6px; align-items: center;
+    padding-left: 12px; border-left: 1px solid #2e3444; flex-wrap: wrap;
+  }
+  .skill-toggle {
+    font-size: 12px; padding: 5px 10px; border-radius: 6px;
+    background: #1a1d28; border: 1px solid #2e3444; color: #8b93a7;
+    cursor: pointer; transition: .15s;
+  }
+  .skill-toggle:hover { border-color: #4a7dff; color: #c9d1e0; }
+  .skill-toggle.on { background: #2b4a8a; border-color: #4a7dff; color: #fff; }
+
+  #chat {
+    flex: 1; overflow-y: auto; padding: 24px 32px;
+    display: flex; flex-direction: column; gap: 16px;
+  }
+  .empty-hint { color: #4b5563; text-align: center; margin-top: 40px; font-size: 14px; }
+  .msg { max-width: 80%; padding: 12px 16px; border-radius: 12px; line-height: 1.65; }
+  .msg.user { align-self: flex-end; background: #2b4a8a; }
+  .msg.assistant { align-self: flex-start; background: #1e2230; }
+  .msg pre { background: #0d1117; padding: 12px; border-radius: 8px; overflow-x: auto; margin: 8px 0; }
+  .msg code { font-family: Consolas, monospace; font-size: 13px; }
+  .msg p { margin: 6px 0; }
+  .msg ul, .msg ol { margin: 6px 0 6px 20px; }
+
+  #inputArea {
+    padding: 12px 20px 20px; border-top: 1px solid #262a36;
+    display: flex; gap: 12px; align-items: flex-end;
+  }
+  #input {
+    flex: 1; min-height: 48px; max-height: 200px; background: #1e2230;
+    color: #e6e6e6; border: 1px solid #2e3444; border-radius: 12px;
+    padding: 12px 16px; font-size: 14px; font-family: inherit; outline: none; resize: none;
+  }
+  #input:focus { border-color: #4a7dff; }
+  button#sendBtn {
+    background: #4a7dff; color: #fff; border: none; border-radius: 8px;
+    padding: 10px 18px; font-size: 14px; cursor: pointer;
+  }
+  button#sendBtn:hover { background: #3a6ae6; }
+  button#sendBtn:disabled { background: #2e3444; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<aside id="sidebar">
+  <button id="newConvBtn">+ 新建对话</button>
+  <div id="convList"></div>
+  <button id="clearAllBtn">🗑 清空所有数据</button>
+</aside>
+
+<main id="main">
+  <div id="topbar">
+    <select id="modelSelect"></select>
+    <button class="preset" data-prompt="你是一个专业的中文文案润色助手。用户会发给你一段文字，请直接返回润色后的版本，不要解释。">润色文案</button>
+    <button class="preset" data-prompt="你是一个PPT大纲生成助手。根据用户给的主题，输出清晰的幻灯片大纲，每页包含标题和3-5个要点。">PPT大纲</button>
+    <button class="preset" data-prompt="你是一个文档撰写助手。根据用户的要求，输出结构清晰、语言专业的文档内容。">文档撰写</button>
+    <button class="preset active" data-prompt="">普通聊天</button>
+    <div id="skillsBar"></div>
+  </div>
+
+  <div id="chat"></div>
+
+  <div id="inputArea">
+    <textarea id="input" placeholder="输入消息... (Enter 发送，Shift+Enter 换行)"></textarea>
+    <button id="sendBtn">发送</button>
+  </div>
+</main>
+
+<script>
+const API = "http://localhost:8001";
+const chatEl = document.getElementById("chat");
+const inputEl = document.getElementById("input");
+const sendBtn = document.getElementById("sendBtn");
+const modelSelect = document.getElementById("modelSelect");
+const convListEl = document.getElementById("convList");
+
+let conversations = [];
+let currentConvId = null;
+let currentConv = null;
+let enabledSkills = new Set();
+
+// ---------- 模型 ----------
+async function loadModels() {
+  try {
+    const res = await fetch(`${API}/api/models`);
+    const data = await res.json();
+    modelSelect.innerHTML = "";
+    data.models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m.name; opt.textContent = m.name;
+      modelSelect.appendChild(opt);
+    });
+  } catch (e) {
+    modelSelect.innerHTML = '<option>连接失败</option>';
+  }
+}
+
+// ---------- 技能 ----------
+async function loadSkills() {
+  try {
+    const res = await fetch(`${API}/api/skills`);
+    const skills = await res.json();
+    const bar = document.getElementById("skillsBar");
+    bar.innerHTML = '<span style="font-size:12px;color:#6b7280;">技能：</span>';
+    if (skills.length === 0) {
+      bar.innerHTML += '<span style="font-size:12px;color:#4b5563;">无</span>';
+      return;
+    }
+    skills.forEach(s => {
+      const btn = document.createElement("button");
+      btn.className = "skill-toggle";
+      btn.textContent = s.name.replace(/_/g, " ");
+      btn.title = s.description;
+      btn.onclick = () => {
+        if (enabledSkills.has(s.id)) {
+          enabledSkills.delete(s.id);
+          btn.classList.remove("on");
+        } else {
+          enabledSkills.add(s.id);
+          btn.classList.add("on");
+        }
+      };
+      bar.appendChild(btn);
+    });
+  } catch (e) {
+    console.error("加载技能失败", e);
+  }
+}
+
+// ---------- 会话 ----------
+async function loadConversations() {
+  const res = await fetch(`${API}/api/conversations`);
+  conversations = await res.json();
+  renderSidebar();
+}
+
+function renderSidebar() {
+  convListEl.innerHTML = "";
+  conversations.forEach(c => {
+    const div = document.createElement("div");
+    div.className = "conv-item" + (c.id === currentConvId ? " active" : "");
+    div.innerHTML = `<span class="title"></span><span class="del">×</span>`;
+    div.querySelector(".title").textContent = c.title;
+    div.onclick = () => openConversation(c.id);
+    div.querySelector(".del").onclick = (e) => deleteConversation(c.id, e);
+    convListEl.appendChild(div);
+  });
+}
+
+async function newConversation() {
+  const res = await fetch(`${API}/api/conversations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: modelSelect.value || "qwen2.5:7b" })
+  });
+  const conv = await res.json();
+  await loadConversations();
+  await openConversation(conv.id);
+}
+
+async function openConversation(id) {
+  currentConvId = id;
+  const res = await fetch(`${API}/api/conversations/${id}`);
+  currentConv = await res.json();
+
+  modelSelect.value = currentConv.model || modelSelect.value;
+
+  document.querySelectorAll(".preset").forEach(b => {
+    b.classList.toggle("active", b.dataset.prompt === (currentConv.system_prompt || ""));
+  });
+
+  chatEl.innerHTML = "";
+  if (currentConv.messages.length === 0) {
+    chatEl.innerHTML = '<div class="empty-hint">开始你的第一条消息吧</div>';
+  } else {
+    currentConv.messages.forEach(m => addMessage(m.role, m.content, false));
+  }
+  chatEl.scrollTop = chatEl.scrollHeight;
+  renderSidebar();
+}
+
+async function deleteConversation(id, e) {
+  e.stopPropagation();
+  if (!confirm("确定删除这个对话？")) return;
+  await fetch(`${API}/api/conversations/${id}`, { method: "DELETE" });
+  if (currentConvId === id) {
+    currentConvId = null;
+    currentConv = null;
+  }
+  await loadConversations();
+  if (conversations.length > 0) {
+    await openConversation(conversations[0].id);
+  } else {
+    chatEl.innerHTML = '<div class="empty-hint">点击左上角“新建对话”开始</div>';
+  }
+}
+
+async function clearAll() {
+  if (!confirm("确定清空所有对话？这个操作不可恢复。")) return;
+  await fetch(`${API}/api/conversations`, { method: "DELETE" });
+  conversations = [];
+  currentConvId = null;
+  currentConv = null;
+  chatEl.innerHTML = '<div class="empty-hint">点击左上角“新建对话”开始</div>';
+  renderSidebar();
+}
+
+// ---------- 消息 ----------
+function addMessage(role, content, scroll = true) {
+  const div = document.createElement("div");
+  div.className = `msg ${role}`;
+  if (role === "assistant") {
+    div.innerHTML = marked.parse(content || "");
+  } else {
+    div.textContent = content;
+  }
+  chatEl.appendChild(div);
+  if (scroll) chatEl.scrollTop = chatEl.scrollHeight;
+  return div;
+}
+
+async function send() {
+  if (!currentConvId) { alert("请先新建一个对话"); return; }
+  const text = inputEl.value.trim();
+  if (!text) return;
+
+  inputEl.value = "";
+  inputEl.style.height = "auto";
+  chatEl.querySelector(".empty-hint")?.remove();
+
+  addMessage("user", text);
+  const assistantDiv = addMessage("assistant", "");
+  sendBtn.disabled = true;
+
+  try {
+    const res = await fetch(`${API}/api/conversations/${currentConvId}/chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ content: text, skills: [...enabledSkills] })
+    });
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let full = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop();
+
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const data = JSON.parse(line);
+          if (data.message?.content) {
+            full += data.message.content;
+            assistantDiv.innerHTML = marked.parse(full);
+            chatEl.scrollTop = chatEl.scrollHeight;
+          }
+        } catch { }
+      }
+    }
+
+    await loadConversations();
+  } catch (e) {
+    assistantDiv.textContent = "请求失败：" + e.message;
+  } finally {
+    sendBtn.disabled = false;
+    inputEl.focus();
+  }
+}
+
+// ---------- 事件 ----------
+document.getElementById("newConvBtn").onclick = newConversation;
+document.getElementById("clearAllBtn").onclick = clearAll;
+sendBtn.onclick = send;
+
+inputEl.addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.shiftKey) {
+    e.preventDefault();
+    send();
+  }
+});
+inputEl.addEventListener("input", () => {
+  inputEl.style.height = "auto";
+  inputEl.style.height = Math.min(inputEl.scrollHeight, 200) + "px";
+});
+
+modelSelect.onchange = async () => {
+  if (!currentConvId) return;
+  await fetch(`${API}/api/conversations/${currentConvId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ model: modelSelect.value })
+  });
+  currentConv.model = modelSelect.value;
+};
+
+document.querySelectorAll(".preset").forEach(btn => {
+  btn.onclick = async () => {
+    if (!currentConvId) { alert("请先新建一个对话"); return; }
+    document.querySelectorAll(".preset").forEach(b => b.classList.remove("active"));
+    btn.classList.add("active");
+    const newPrompt = btn.dataset.prompt;
+    await fetch(`${API}/api/conversations/${currentConvId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ system_prompt: newPrompt })
+    });
+    currentConv.system_prompt = newPrompt;
+  };
+});
+
+// ---------- 初始化 ----------
+(async function init() {
+  await loadModels();
+  await loadSkills();
+  await loadConversations();
+  if (conversations.length > 0) {
+    await openConversation(conversations[0].id);
+  } else {
+    chatEl.innerHTML = '<div class="empty-hint">点击左上角“新建对话”开始</div>';
+  }
+})();
+</script>
+</body>
+</html>
